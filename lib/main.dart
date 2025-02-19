@@ -1,13 +1,10 @@
-import 'package:english_words/english_words.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-
 import 'dart:io';
-// import 'dart:async';
 import 'package:file_picker/file_picker.dart';
+import 'package:http/http.dart' as http;
 
-// For file handling
-
+// Main function to start the app
 void main() {
   runApp(MyApp());
 }
@@ -23,7 +20,8 @@ class MyApp extends StatelessWidget {
         title: 'SpotScriber App',
         theme: ThemeData(
           useMaterial3: true,
-          colorScheme: ColorScheme.fromSeed(seedColor: const Color.fromARGB(255, 4, 11, 224)),
+          colorScheme:
+              ColorScheme.fromSeed(seedColor: const Color.fromARGB(255, 4, 11, 224)),
         ),
         home: MyHomePage(),
       ),
@@ -31,84 +29,105 @@ class MyApp extends StatelessWidget {
   }
 }
 
+// Pipeline stages for handling different UI states
 enum PipelineStage {
-  // Take input file name, TODO: Audio recording input
-  takeInput, 
-
-  // When user selects an input audio file
-  displayInputFileName, 
-
-   // When user asks to process the input audio file
-  displayInputProcessing,
-
-  // When transcriber service sends a response
-  handleResponseFromTranscriber, 
-
-  // When user asks to send the transcript to Meeting Intelligence
-  sendToMeetingIntelligence 
+  takeInput, // File selection stage
+  displayInputFileName, // Show selected file name
+  uploading, // Show loading indicator
+  handleResponseFromTranscriber, // Show transcript after API response
 }
 
 class MyAppState extends ChangeNotifier {
-  var current = WordPair.random();
   var pipelineStage = PipelineStage.takeInput;
   var audioFilePath = ""; 
-
-  void getNext() {
-    current = WordPair.random();
-    notifyListeners();
-  }
+  var transcript = ""; // Store the transcript from the API
+  bool isLoading = false; // Track loading state
 
   void setAudioFilePath(String path) {
     audioFilePath = path;
     notifyListeners();
   }
 
-  void setPipelineStage(stage) {
-    // TODO: Add code to check here that the state transitions
-    // are valid and if not then add debugging logs here.
+  void setPipelineStage(PipelineStage stage) {
     pipelineStage = stage;
     notifyListeners();
   }
 
-  Future<String> pickFile() async {
+  Future<void> pickFile() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles();
 
     if (result != null) {
-      File file = File(result.files.single.path!);
-      return file.path;
-    } else {
-      // User canceled the picker
-      return '';
+      String filePath = result.files.single.path!;
+      setAudioFilePath(filePath);
+      setPipelineStage(PipelineStage.displayInputFileName);
+    }
+  }
+
+  Future<void> uploadFile() async {
+    if (audioFilePath.isEmpty) {
+      print("No file selected.");
+      return;
+    }
+
+    var uri = Uri.parse("https://your-api.com/upload"); // Replace with actual API
+
+    var request = http.MultipartRequest("POST", uri);
+    request.files.add(await http.MultipartFile.fromPath("file", audioFilePath));
+
+    // Show loading indicator
+    isLoading = true;
+    notifyListeners();
+
+    try {
+      var response = await request.send();
+      var responseBody = await response.stream.bytesToString();
+
+      if (response.statusCode == 200) {
+        transcript = responseBody;
+        print("File uploaded successfully! Transcript: $responseBody");
+        setPipelineStage(PipelineStage.handleResponseFromTranscriber);
+      } else {
+        transcript = "Error: Failed to fetch transcript.";
+        print("File upload failed: ${response.statusCode}");
+      }
+    } catch (e) {
+      transcript = "Error: $e";
+      print("Error uploading file: $e");
+    } finally {
+      isLoading = false;
+      notifyListeners();
     }
   }
 }
 
+// UI
 class MyHomePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     var appState = context.watch<MyAppState>();
 
-    var titleText = "spotscriber";
-
     return Scaffold(
+      appBar: AppBar(title: Text("SpotScriber")),
       body: Center(
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            TitleBar(titleText: titleText),
-            SizedBox(height: 50),
-            Text(appState.current.asLowerCase),
+            TitleBar(titleText: "SpotScriber"),
+            SizedBox(height: 20),
 
-            // First Stage
-            Visibility(
-              visible: appState.pipelineStage == PipelineStage.takeInput,
-              child: InputBar(appState: appState),
-            ),
+            // File selection UI
+            if (appState.pipelineStage == PipelineStage.takeInput) InputBar(appState: appState),
 
-            // Second Stage
-            Visibility(
-              visible: appState.pipelineStage == PipelineStage.displayInputFileName,
-              child: InputFileNameViewer(appState: appState),
-            ),
+            // Show file name after selection
+            if (appState.pipelineStage == PipelineStage.displayInputFileName) 
+              InputFileNameViewer(appState: appState),
+
+            // Show loading indicator while uploading
+            if (appState.isLoading) CircularProgressIndicator(),
+
+            // Show transcript after response
+            if (appState.pipelineStage == PipelineStage.handleResponseFromTranscriber)
+              TranscriptViewer(transcript: appState.transcript),
           ],
         ),
       ),
@@ -116,13 +135,54 @@ class MyHomePage extends StatelessWidget {
   }
 }
 
-class InputFileNameViewer extends StatelessWidget {
-  const InputFileNameViewer({
-    super.key,
-    required this.appState,
-  });
+// Component to show the transcript
+class TranscriptViewer extends StatelessWidget {
+  final String transcript;
 
+  const TranscriptViewer({super.key, required this.transcript});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text("Transcript:", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        SizedBox(height: 10),
+        Padding(
+          padding: const EdgeInsets.all(10.0),
+          child: Text(transcript, textAlign: TextAlign.center, style: TextStyle(fontSize: 16)),
+        ),
+      ],
+    );
+  }
+}
+
+// Component to show file selection UI
+class InputBar extends StatelessWidget {
   final MyAppState appState;
+
+  const InputBar({super.key, required this.appState});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ElevatedButton(
+          onPressed: () async {
+            await appState.pickFile();
+          },
+          child: Text('Choose File'),
+        ),
+      ],
+    );
+  }
+}
+
+// Component to display selected file name and process button
+class InputFileNameViewer extends StatelessWidget {
+  final MyAppState appState;
+
+  const InputFileNameViewer({super.key, required this.appState});
 
   @override
   Widget build(BuildContext context) {
@@ -131,102 +191,56 @@ class InputFileNameViewer extends StatelessWidget {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text("Chosen Audio File"),
-            SizedBox(width: 20),
-            Text(appState.audioFilePath),
+            Text("Chosen File: "),
+            SizedBox(width: 10),
+            Text(appState.audioFilePath, style: TextStyle(fontWeight: FontWeight.bold)),
           ],
         ),
-
+        SizedBox(height: 10),
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             ElevatedButton(
-              onPressed: () {
-                print("Process button pressed");
+              onPressed: () async {
+                await appState.uploadFile();
               },
-              child: Text("Process")
+              child: Text("Process & Submit"),
             ),
-
+            SizedBox(width: 10),
             ElevatedButton(
               onPressed: () {
-                print("Cancel button pressed");
+                appState.setPipelineStage(PipelineStage.takeInput);
+                appState.setAudioFilePath("");
               },
-              child: Text("Cancel")
-            )
+              child: Text("Cancel"),
+            ),
           ],
-        ), 
-      ],
-    );
-  }
-}
-
-class InputBar extends StatelessWidget {
-  const InputBar({
-    super.key,
-    required this.appState,
-  });
-
-  final MyAppState appState;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      // To center stuff out
-      mainAxisSize: MainAxisSize.min,
-    
-      children: [    
-        ElevatedButton(
-          onPressed: () async {
-            var filePath = await appState.pickFile();
-            if (filePath.isNotEmpty) {
-              appState.setAudioFilePath(filePath);
-              appState.setPipelineStage(PipelineStage.displayInputFileName);
-            }
-          },
-    
-          child: Text('Choose File'),
         ),
-    
-        // Get some gap between the row widgets
-        SizedBox(width: 20),
-    
-        Text("I am batman")
       ],
     );
   }
 }
 
+// Component for Title Bar
 class TitleBar extends StatelessWidget {
-  const TitleBar({
-    super.key,
-    required this.titleText
-  });
-
   final String titleText;
 
+  const TitleBar({super.key, required this.titleText});
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    final style = theme.textTheme.displayMedium!.copyWith(
-      color: theme.colorScheme.onPrimary,
-    );
-
-
     return Card(
-      // color: theme.colorScheme.primary,
-      child: Row(
-        // Center the row contents
-        mainAxisSize: MainAxisSize.min,
-        children: [
-         ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 100.0, maxWidth: 100.0),
-          child: Image.asset("ek_assets/images/highspot_logo.png"),
-         ),
-          
-          SizedBox(width: 20),
-          Text(titleText, style: style)
-        ],
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.mic, size: 40, color: Colors.blue),
+            SizedBox(width: 10),
+            Text(titleText, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+          ],
+        ),
       ),
     );
   }
