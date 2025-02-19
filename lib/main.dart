@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 // Main function to start the app
 void main() {
@@ -42,6 +43,7 @@ class MyAppState extends ChangeNotifier {
   var audioFilePath = ""; 
   var transcript = ""; // Store the transcript from the API
   bool isLoading = false; // Track loading state
+  var scrollController = ScrollController();
 
   void setAudioFilePath(String path) {
     audioFilePath = path;
@@ -69,10 +71,13 @@ class MyAppState extends ChangeNotifier {
       return;
     }
 
-    var uri = Uri.parse("https://your-api.com/upload"); // Replace with actual API
+    var vaibhavUri = "http://172.16.4.224:8000/upload-audio/";
+    var uri = Uri.parse(vaibhavUri); // Replace with actual API
 
     var request = http.MultipartRequest("POST", uri);
     request.files.add(await http.MultipartFile.fromPath("file", audioFilePath));
+    request.fields["user_id"] = "12345";
+    request.fields["meeting_id"] = "meeting_001_part1";
 
     // Show loading indicator
     isLoading = true;
@@ -127,7 +132,7 @@ class MyHomePage extends StatelessWidget {
 
             // Show transcript after response
             if (appState.pipelineStage == PipelineStage.handleResponseFromTranscriber)
-              TranscriptViewer(transcript: appState.transcript),
+              TranscriptViewer(transcript: appState.transcript, scrollController: appState.scrollController),
           ],
         ),
       ),
@@ -138,8 +143,28 @@ class MyHomePage extends StatelessWidget {
 // Component to show the transcript
 class TranscriptViewer extends StatelessWidget {
   final String transcript;
+  final ScrollController scrollController;
 
-  const TranscriptViewer({super.key, required this.transcript});
+  const TranscriptViewer({super.key, required this.transcript, required this.scrollController});
+  
+  String processTranscriptForPrettyView(String transcriptJsonString) {
+    Map<String, dynamic> transcriptJson = jsonDecode(transcriptJsonString);
+    List<dynamic> results = transcriptJson["results"];
+
+    var prettyStringBuffer = StringBuffer();
+    results.forEach((entry) {
+      prettyStringBuffer.writeln(entry["speaker"] + " [" + entry["time"] + "]: ");
+      prettyStringBuffer.writeln(entry["content"]);
+      prettyStringBuffer.writeln();
+    });
+
+    // TODO: Add this and check if vertical scrolling works
+    // for (int i = 0; i < 50; i++) {
+    //   prettyStringBuffer.writeln("I am batman");
+    // }
+
+    return prettyStringBuffer.toString();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -149,7 +174,10 @@ class TranscriptViewer extends StatelessWidget {
         SizedBox(height: 10),
         Padding(
           padding: const EdgeInsets.all(10.0),
-          child: Text(transcript, textAlign: TextAlign.center, style: TextStyle(fontSize: 16)),
+          child: SingleChildScrollView(
+            controller: scrollController,  
+            child: Text(processTranscriptForPrettyView(transcript), textAlign: TextAlign.center, style: TextStyle(fontSize: 16)),
+          ),
         ),
       ],
     );
