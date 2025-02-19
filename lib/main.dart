@@ -42,6 +42,10 @@ class MyAppState extends ChangeNotifier {
   var pipelineStage = PipelineStage.takeInput;
   var audioFilePath = ""; 
   var transcript = ""; // Store the transcript from the API
+  
+  // Store the dialogues from the transcript in a list format
+  List<String> transcriptDialougeList = [];
+
   bool isLoading = false; // Track loading state
   var scrollController = ScrollController();
 
@@ -65,13 +69,36 @@ class MyAppState extends ChangeNotifier {
     }
   }
 
+  List<String> processTranscriptForPrettyView(String transcriptJsonString) {
+    Map<String, dynamic> transcriptJson = jsonDecode(transcriptJsonString);
+    List<dynamic> results = transcriptJson["results"];
+
+    List<String> dialogueList = [];
+    
+    results.forEach((entry) {
+      var prettyDialogueBuffer = StringBuffer();
+      prettyDialogueBuffer.writeln(entry["speaker"] + " [" + entry["time"] + "]: ");
+      prettyDialogueBuffer.writeln(entry["content"]);
+
+      dialogueList.add(prettyDialogueBuffer.toString());
+    });
+
+    // TODO: Add this and check if vertical scrolling works
+    // for (int i = 0; i < 50; i++) {
+    //    dialogueList.add("I am batman");
+    // }
+
+    return dialogueList;
+  }
+
   Future<void> uploadFile() async {
     if (audioFilePath.isEmpty) {
       print("No file selected.");
       return;
     }
 
-    var vaibhavUri = "http://172.16.4.224:8000/upload-audio/";
+    //TODO: var vaibhavUri = "http://172.16.4.224:8000/upload-audio/";
+    var vaibhavUri = "http://0.0.0.0:8000/upload-audio/";
     var uri = Uri.parse(vaibhavUri); // Replace with actual API
 
     var request = http.MultipartRequest("POST", uri);
@@ -90,6 +117,10 @@ class MyAppState extends ChangeNotifier {
       if (response.statusCode == 200) {
         transcript = responseBody;
         print("File uploaded successfully! Transcript: $responseBody");
+        
+        // Prettify the transcript and get it in form of a dialogue list
+        transcriptDialougeList = processTranscriptForPrettyView(transcript);
+
         setPipelineStage(PipelineStage.handleResponseFromTranscriber);
       } else {
         transcript = "Error: Failed to fetch transcript.";
@@ -132,7 +163,7 @@ class MyHomePage extends StatelessWidget {
 
             // Show transcript after response
             if (appState.pipelineStage == PipelineStage.handleResponseFromTranscriber)
-              TranscriptViewer(transcript: appState.transcript, scrollController: appState.scrollController),
+              TranscriptViewer(appState: appState, transcriptDialogueList: appState.transcriptDialougeList),
           ],
         ),
       ),
@@ -142,42 +173,36 @@ class MyHomePage extends StatelessWidget {
 
 // Component to show the transcript
 class TranscriptViewer extends StatelessWidget {
-  final String transcript;
-  final ScrollController scrollController;
+  final MyAppState appState;
+  final List<String> transcriptDialogueList;
 
-  const TranscriptViewer({super.key, required this.transcript, required this.scrollController});
-  
-  String processTranscriptForPrettyView(String transcriptJsonString) {
-    Map<String, dynamic> transcriptJson = jsonDecode(transcriptJsonString);
-    List<dynamic> results = transcriptJson["results"];
-
-    var prettyStringBuffer = StringBuffer();
-    results.forEach((entry) {
-      prettyStringBuffer.writeln(entry["speaker"] + " [" + entry["time"] + "]: ");
-      prettyStringBuffer.writeln(entry["content"]);
-      prettyStringBuffer.writeln();
-    });
-
-    // TODO: Add this and check if vertical scrolling works
-    // for (int i = 0; i < 50; i++) {
-    //   prettyStringBuffer.writeln("I am batman");
-    // }
-
-    return prettyStringBuffer.toString();
-  }
+  TranscriptViewer({super.key, required this.appState, required this.transcriptDialogueList});
 
   @override
   Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
+
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Text("Transcript:", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         SizedBox(height: 10),
-        Padding(
-          padding: const EdgeInsets.all(10.0),
-          child: SingleChildScrollView(
-            controller: scrollController,  
-            child: Text(processTranscriptForPrettyView(transcript), textAlign: TextAlign.center, style: TextStyle(fontSize: 16)),
+        SizedBox(
+          height: screenHeight / 2.5,
+          child: ListView.builder(
+            itemCount: transcriptDialogueList.length,
+            itemBuilder: (context, index) {
+              return Center(child: Text(transcriptDialogueList[index]));
+            },
           ),
+        ),
+        SizedBox(height: 20),
+        ElevatedButton(
+          onPressed: () {
+            appState.setPipelineStage(PipelineStage.takeInput);
+          },
+
+          child: Text('Go Back'),
         ),
       ],
     );
