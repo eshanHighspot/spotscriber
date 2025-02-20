@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:record/record.dart';
+import 'package:path/path.dart' as p;
+import 'dart:async';
 
 // Main function to start the app
 void main() {
@@ -32,7 +36,9 @@ class MyApp extends StatelessWidget {
 
 // Pipeline stages for handling different UI states
 enum PipelineStage {
-  takeInput, // File selection stage
+  takeInput, // File or Audio Recorder selection stage
+  displayNoPermissionToRecord, // Show message when no permission to record
+  displayRecorder, // Show the audio recorder (when Record Audio selected)
   displayInputFileName, // Show selected file name
   uploading, // Show loading indicator
   handleResponseFromTranscriber, // Show transcript after API response
@@ -47,7 +53,10 @@ class MyAppState extends ChangeNotifier {
   List<String> transcriptDialougeList = [];
 
   bool isLoading = false; // Track loading state
-  var scrollController = ScrollController();
+  AudioRecorder audioRecorder = AudioRecorder();
+  bool isRecording = false;
+
+  Duration recordingTimer = Duration(hours: 0, minutes: 0, seconds: 0);
 
   void setAudioFilePath(String path) {
     audioFilePath = path;
@@ -134,6 +143,36 @@ class MyAppState extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  Future<bool> checkRecordingPermission() async {
+    return await audioRecorder.hasPermission();
+  }
+
+  void setIsRecording(bool recording) {
+    isRecording = recording;
+    notifyListeners();
+  }
+
+  Future<Directory> getTargetAudioFileDir() async {
+    return await getApplicationDocumentsDirectory();
+  }
+
+  void updateRecordingTimer() {
+    recordingTimer += Duration(seconds: 1);
+    notifyListeners();
+  }
+
+  void resetRecordingTimer() {
+    recordingTimer = Duration(hours: 0, minutes: 0, seconds: 0);
+    notifyListeners();
+  }
+
+  String getRecordingTimerString() {
+    // The format is hh:mm:ss.uuuuuu
+    // so we remove the uuuu part and return [hh::mm::ss, uuuuuu]
+    // only the first part (hh:mm:ss) after split
+    return recordingTimer.toString().split(".").first;
+  }
 }
 
 // UI
@@ -149,10 +188,16 @@ class MyHomePage extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             TitleBar(titleText: "SpotScriber"),
-            SizedBox(height: 20),
+            SizedBox(height: 30),
 
-            // File selection UI
+            // File or Audio Recording selection UI
             if (appState.pipelineStage == PipelineStage.takeInput) InputBar(appState: appState),
+
+            if (appState.pipelineStage == PipelineStage.displayNoPermissionToRecord)
+              NoPermissionToRecordViewer(appState: appState),
+
+            if (appState.pipelineStage == PipelineStage.displayRecorder)
+              RecordingViewer(appState: appState, audioRecorder: appState.audioRecorder),
 
             // Show file name after selection
             if (appState.pipelineStage == PipelineStage.displayInputFileName) 
@@ -167,6 +212,32 @@ class MyHomePage extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class NoPermissionToRecordViewer extends StatelessWidget {
+  const NoPermissionToRecordViewer({
+    super.key,
+    required this.appState,
+  });
+
+  final MyAppState appState;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text("SpotScriber doesn't have permission to record audio !"),
+        SizedBox(height: 10),
+        ElevatedButton(
+          onPressed: () {
+            appState.setPipelineStage(PipelineStage.takeInput);
+          },
+    
+          child: Text("Go Back")
+        )
+      ],
     );
   }
 }
@@ -209,6 +280,64 @@ class TranscriptViewer extends StatelessWidget {
   }
 }
 
+// Component to show the audio recorder
+class RecordingViewer extends StatelessWidget {
+  final MyAppState appState;
+  final AudioRecorder audioRecorder;
+
+  RecordingViewer({super.key, required this.appState, required this.audioRecorder});
+
+  @override
+  Widget build(BuildContext context) {
+    return  ElevatedButton.icon(
+          icon: appState.isRecording ? Icon(Icons.pause, size: 25, color: Colors.blue) : 
+                                       Icon(Icons.play_arrow, size: 25, color: Colors.blue),
+          onPressed: () async {
+            var isRecording = appState.isRecording;
+
+            final Directory dir = await appState.getTargetAudioFileDir();
+
+            
+            if (isRecording) {
+              // button pressed when recording was going on so, we
+              // should stop now
+              await audioRecorder.stop();
+
+              appState.setPipelineStage(PipelineStage.displayInputFileName);
+            } else {
+              // button pressed when recording was not going on so,
+              // now we should start recording
+              // Generate the path to store the audio file at
+              final DateTime currTime = DateTime.now();
+              final String currTimeStr = currTime.day.toString() + "_" + currTime.month.toString() + "_" + currTime.year.toString() + "_" +
+                                         currTime.hour.toString() + "_" + currTime.minute.toString() + "_" + currTime.second.toString();
+              final String fullFilePath = p.join(dir.path, "spotscriber_recorded_audio_" + currTimeStr + ".wav"); 
+
+              appState.setAudioFilePath(fullFilePath);
+              await audioRecorder.start(const RecordConfig(), path: fullFilePath);
+
+              // Start a timer of 1 second duration
+              var oneSec = Duration(seconds: 1);
+              Timer.periodic(oneSec, (Timer t) {
+                if (appState.isRecording) {
+                  // Update timer if we're recording
+                  appState.updateRecordingTimer();
+                } else {
+                  // Stop the timer if we've stopped recording
+                  t.cancel();
+                  appState.resetRecordingTimer();
+                }
+              });
+            }
+
+            appState.setIsRecording(!isRecording);
+          },
+          label: appState.isRecording ? Text("Stop Recording (" + appState.getRecordingTimerString() + ")") : 
+                                        Text('Start Recording'),
+        );
+  }
+}
+
 // Component to show file selection UI
 class InputBar extends StatelessWidget {
   final MyAppState appState;
@@ -220,11 +349,27 @@ class InputBar extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        ElevatedButton(
+        ElevatedButton.icon(
+          icon: Icon(Icons.audio_file, size: 25, color: Colors.blue),
           onPressed: () async {
             await appState.pickFile();
           },
-          child: Text('Choose File'),
+          label: Text('Choose Audio File'),
+        ),
+
+        SizedBox(width: 15),
+        
+        ElevatedButton.icon(
+          icon: Icon(Icons.mic, size: 25, color: Colors.blue),
+          onPressed: () async {
+            bool perm = await appState.checkRecordingPermission();
+            if (perm) {
+              appState.setPipelineStage(PipelineStage.displayRecorder);
+            } else {
+              appState.setPipelineStage(PipelineStage.displayNoPermissionToRecord);
+            }
+          },
+          label: Text('Record Audio'),
         ),
       ],
     );
@@ -242,11 +387,12 @@ class InputFileNameViewer extends StatelessWidget {
     return Column(
       children: [
         Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
             Text("Chosen File: "),
             SizedBox(width: 10),
-            Text(appState.audioFilePath, style: TextStyle(fontWeight: FontWeight.bold)),
+            Flexible(child: Text(appState.audioFilePath, style: TextStyle(fontWeight: FontWeight.bold))),
           ],
         ),
         SizedBox(height: 10),
@@ -289,7 +435,7 @@ class TitleBar extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.mic, size: 40, color: Colors.blue),
+            Icon(Icons.article_sharp, size: 40, color: Colors.blue),
             SizedBox(width: 10),
             Text(titleText, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
           ],
