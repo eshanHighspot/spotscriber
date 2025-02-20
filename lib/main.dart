@@ -48,7 +48,8 @@ class MyAppState extends ChangeNotifier {
   var pipelineStage = PipelineStage.takeInput;
   var audioFilePath = ""; 
   var transcript = ""; // Store the transcript from the API
-  
+  var transcriptFilePath = ""; // The target path to save the transcript to
+
   // Store the dialogues from the transcript in a list format
   List<String> transcriptDialougeList = [];
 
@@ -130,6 +131,22 @@ class MyAppState extends ChangeNotifier {
         // Prettify the transcript and get it in form of a dialogue list
         transcriptDialougeList = processTranscriptForPrettyView(transcript);
 
+        // Save the file in pretty format
+        final Directory dir = await getTargetTranscriptFileDir();
+        final DateTime now = DateTime.now();
+        final audioFileNameWithoutExtension = p.basename(audioFilePath).split(".").first;
+        final String transcriptFileName = audioFileNameWithoutExtension + "_transcript_" +
+                                          now.day.toString() + "_" + now.month.toString() + "_" + now.year.toString() + "_" +
+                                          now.hour.toString() + "_" + now.minute.toString() + "_" + now.second.toString() + ".json";
+        
+        transcriptFilePath = p.join(dir.path, transcriptFileName); 
+
+        File transcriptFile = File(transcriptFilePath);
+        await transcriptFile.writeAsString(transcript);
+
+        print("Transcript saved at: $transcriptFilePath");
+        print("I am batman");
+
         setPipelineStage(PipelineStage.handleResponseFromTranscriber);
       } else {
         transcript = "Error: Failed to fetch transcript.";
@@ -154,6 +171,12 @@ class MyAppState extends ChangeNotifier {
   }
 
   Future<Directory> getTargetAudioFileDir() async {
+    return await getApplicationDocumentsDirectory();
+  }
+
+  Future<Directory> getTargetTranscriptFileDir() async {
+    // We'll save generated transcript files (in the pretty
+    // format here)
     return await getApplicationDocumentsDirectory();
   }
 
@@ -275,7 +298,17 @@ class TranscriptViewer extends StatelessWidget {
 
           child: Text('Go Back'),
         ),
-      ],
+
+        SizedBox(height: 10),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(child: Text("Transcript saved at path: ")),
+            Flexible(child: Text(appState.transcriptFilePath, style: TextStyle(fontWeight: FontWeight.bold))),
+          ],
+        )
+        ],
     );
   }
 }
