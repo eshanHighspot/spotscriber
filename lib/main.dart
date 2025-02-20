@@ -37,6 +37,8 @@ class MyApp extends StatelessWidget {
 // Pipeline stages for handling different UI states
 enum PipelineStage {
   takeInput, // File or Audio Recorder selection stage
+  displayDeveloperSettings, // Show developer settings
+  displayHelpTextToSetIpAndPort, // Show help text to set IP and Port
   displayNoPermissionToRecord, // Show message when no permission to record
   displayRecorder, // Show the audio recorder (when Record Audio selected)
   displayInputFileName, // Show selected file name
@@ -46,6 +48,13 @@ enum PipelineStage {
 
 class MyAppState extends ChangeNotifier {
   var pipelineStage = PipelineStage.takeInput;
+
+  String ipAddress = "";
+  String port = "";
+
+  var ipAddressTextEditingController = TextEditingController();
+  var portTextEditingController = TextEditingController();
+
   var audioFilePath = ""; 
   var transcript = ""; // Store the transcript from the API
   var transcriptFilePath = ""; // The target path to save the transcript to
@@ -66,6 +75,16 @@ class MyAppState extends ChangeNotifier {
 
   void setPipelineStage(PipelineStage stage) {
     pipelineStage = stage;
+    notifyListeners();
+  }
+
+  void setIpAddress(String ip) {
+    ipAddress = ip;
+    notifyListeners();
+  }
+
+  void setPort(String p) {
+    port = p;
     notifyListeners();
   }
 
@@ -108,8 +127,10 @@ class MyAppState extends ChangeNotifier {
     }
 
     //TODO: var vaibhavUri = "http://172.16.4.224:8000/upload-audio/";
-    var vaibhavUri = "http://0.0.0.0:8000/upload-audio/";
+    var vaibhavUri = "http://" + ipAddress + ":" + port + "/upload-audio/";
     var uri = Uri.parse(vaibhavUri); // Replace with actual API
+
+    print("Sending request $vaibhavUri");
 
     var request = http.MultipartRequest("POST", uri);
     request.files.add(await http.MultipartFile.fromPath("file", audioFilePath));
@@ -216,11 +237,29 @@ class MyHomePage extends StatelessWidget {
             // File or Audio Recording selection UI
             if (appState.pipelineStage == PipelineStage.takeInput) InputBar(appState: appState),
 
+            if (appState.pipelineStage == PipelineStage.displayDeveloperSettings)
+              DeveloperSettingsViewer(appState: appState),
+
             if (appState.pipelineStage == PipelineStage.displayNoPermissionToRecord)
               NoPermissionToRecordViewer(appState: appState),
 
             if (appState.pipelineStage == PipelineStage.displayRecorder)
               RecordingViewer(appState: appState, audioRecorder: appState.audioRecorder),
+
+            if(appState.pipelineStage == PipelineStage.displayHelpTextToSetIpAndPort)
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(child: Text("Please set IP Address and Port in Developer Settings to proceed.")),
+                  SizedBox(height: 20),
+                  ElevatedButton(
+                    onPressed: () {
+                      appState.setPipelineStage(PipelineStage.takeInput);
+                    },
+                    child: Text("Go Back"),
+                  ),
+                ],
+              ),
 
             // Show file name after selection
             if (appState.pipelineStage == PipelineStage.displayInputFileName) 
@@ -235,6 +274,54 @@ class MyHomePage extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class DeveloperSettingsViewer extends StatelessWidget {
+  const DeveloperSettingsViewer({
+    super.key,
+    required this.appState,
+  });
+
+  final MyAppState appState;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+      Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: TextField(
+          controller: appState.ipAddressTextEditingController,
+          decoration: InputDecoration(
+            border: OutlineInputBorder(),
+            hintText: 'Enter ip address'
+          )
+        ),
+      ),
+    
+      Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: TextField(
+          controller: appState.portTextEditingController,
+          decoration: InputDecoration(
+            border: OutlineInputBorder(),
+            hintText: 'Enter ports'
+          )
+        ),
+      ),
+      ElevatedButton(
+        onPressed: () {
+          appState.setIpAddress(appState.ipAddressTextEditingController.text);
+          appState.setPort(appState.portTextEditingController.text);
+          appState.setPipelineStage(PipelineStage.takeInput);
+        },
+    
+        child: Text("Set")
+      )
+    ],
     );
   }
 }
@@ -379,31 +466,55 @@ class InputBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        ElevatedButton.icon(
-          icon: Icon(Icons.audio_file, size: 25, color: Colors.blue),
-          onPressed: () async {
-            await appState.pickFile();
-          },
-          label: Text('Choose Audio File'),
-        ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ElevatedButton.icon(
+              icon: Icon(Icons.audio_file, size: 25, color: Colors.blue),
+              onPressed: () async {
+                if (appState.ipAddress.isEmpty || appState.port.isEmpty) {
+                  appState.setPipelineStage(PipelineStage.displayHelpTextToSetIpAndPort);
+                  return;
+                }
 
-        SizedBox(width: 15),
+                await appState.pickFile();
+              },
+              label: Text('Choose Audio File'),
+            ),
         
-        ElevatedButton.icon(
-          icon: Icon(Icons.mic, size: 25, color: Colors.blue),
-          onPressed: () async {
-            bool perm = await appState.checkRecordingPermission();
-            if (perm) {
-              appState.setPipelineStage(PipelineStage.displayRecorder);
-            } else {
-              appState.setPipelineStage(PipelineStage.displayNoPermissionToRecord);
-            }
-          },
-          label: Text('Record Audio'),
+            SizedBox(width: 15),
+            
+            ElevatedButton.icon(
+              icon: Icon(Icons.mic, size: 25, color: Colors.blue),
+              onPressed: () async {
+                if (appState.ipAddress.isEmpty || appState.port.isEmpty) {
+                  appState.setPipelineStage(PipelineStage.displayHelpTextToSetIpAndPort);
+                  return;
+                }
+
+                bool perm = await appState.checkRecordingPermission();
+                if (perm) {
+                  appState.setPipelineStage(PipelineStage.displayRecorder);
+                } else {
+                  appState.setPipelineStage(PipelineStage.displayNoPermissionToRecord);
+                }
+              },
+              label: Text('Record Audio'),
+            ),
+          ],
         ),
+        SizedBox(height: 50),
+
+        ElevatedButton.icon(
+          icon: Icon(Icons.settings, size: 25, color: Colors.blue),
+          onPressed: ()  {
+            appState.setPipelineStage(PipelineStage.displayDeveloperSettings);
+          },
+          label: Text('Developer Settings'),
+        )
       ],
     );
   }
