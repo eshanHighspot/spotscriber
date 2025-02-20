@@ -378,7 +378,7 @@ class TranscriptViewer extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text("${transcriptDialogueList[index]["speaker"]} [${transcriptDialogueList[index]["time"]}]: ", style: TextStyle(fontWeight: FontWeight.bold)),
-                  Flexible(child: Text("${transcriptDialogueList[index]["content"]}")),
+                  Flexible(child: Text("${transcriptDialogueList[index]["content"]}", textAlign: TextAlign.center)),
                   SizedBox(height:10),
                 ],
               ));
