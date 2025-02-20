@@ -60,7 +60,7 @@ class MyAppState extends ChangeNotifier {
   var transcriptFilePath = ""; // The target path to save the transcript to
 
   // Store the dialogues from the transcript in a list format
-  List<String> transcriptDialougeList = [];
+  List<Map<String, String>> transcriptDialogueList = [];
 
   bool isLoading = false; // Track loading state
   AudioRecorder audioRecorder = AudioRecorder();
@@ -98,18 +98,18 @@ class MyAppState extends ChangeNotifier {
     }
   }
 
-  List<String> processTranscriptForPrettyView(String transcriptJsonString) {
+  List<Map<String, String>> processTranscriptForPrettyView(String transcriptJsonString) {
     Map<String, dynamic> transcriptJson = jsonDecode(transcriptJsonString);
     List<dynamic> results = transcriptJson["results"];
 
-    List<String> dialogueList = [];
+    List<Map<String, String>> dialogueList = [];
     
     results.forEach((entry) {
-      var prettyDialogueBuffer = StringBuffer();
-      prettyDialogueBuffer.writeln(entry["speaker"] + " [" + entry["time"] + "]: ");
-      prettyDialogueBuffer.writeln(entry["content"]);
-
-      dialogueList.add(prettyDialogueBuffer.toString());
+      Map<String, String> m = {};
+      m["speaker"] = entry["speaker"];
+      m["time"] = entry["time"];
+      m["content"] = entry["content"];
+      dialogueList.add(m);
     });
 
     // TODO: Add this and check if vertical scrolling works
@@ -150,7 +150,7 @@ class MyAppState extends ChangeNotifier {
         print("File uploaded successfully! Transcript: $responseBody");
         
         // Prettify the transcript and get it in form of a dialogue list
-        transcriptDialougeList = processTranscriptForPrettyView(transcript);
+        transcriptDialogueList = processTranscriptForPrettyView(transcript);
 
         // Save the file in pretty format
         final Directory dir = await getTargetTranscriptFileDir();
@@ -270,7 +270,7 @@ class MyHomePage extends StatelessWidget {
 
             // Show transcript after response
             if (appState.pipelineStage == PipelineStage.handleResponseFromTranscriber)
-              TranscriptViewer(appState: appState, transcriptDialogueList: appState.transcriptDialougeList),
+              TranscriptViewer(appState: appState, transcriptDialogueList: appState.transcriptDialogueList),
           ],
         ),
       ),
@@ -355,7 +355,7 @@ class NoPermissionToRecordViewer extends StatelessWidget {
 // Component to show the transcript
 class TranscriptViewer extends StatelessWidget {
   final MyAppState appState;
-  final List<String> transcriptDialogueList;
+  final List<Map<String, String>> transcriptDialogueList;
 
   TranscriptViewer({super.key, required this.appState, required this.transcriptDialogueList});
 
@@ -367,16 +367,25 @@ class TranscriptViewer extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text("Transcript:", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        Divider(color: Colors.black),
         SizedBox(height: 10),
         SizedBox(
-          height: screenHeight / 2.5,
+          height: screenHeight / 3,
           child: ListView.builder(
             itemCount: transcriptDialogueList.length,
             itemBuilder: (context, index) {
-              return Center(child: Text(transcriptDialogueList[index]));
+              return Center(child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text("${transcriptDialogueList[index]["speaker"]} [${transcriptDialogueList[index]["time"]}]: ", style: TextStyle(fontWeight: FontWeight.bold)),
+                  Flexible(child: Text("${transcriptDialogueList[index]["content"]}")),
+                  SizedBox(height:10),
+                ],
+              ));
             },
           ),
         ),
+        Divider(color: Colors.black),
         SizedBox(height: 20),
         ElevatedButton(
           onPressed: () {
@@ -391,7 +400,7 @@ class TranscriptViewer extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Flexible(child: Text("Transcript saved at path: ")),
+            Flexible(child: Text("Transcript saved at: ")),
             Flexible(child: Text(appState.transcriptFilePath, style: TextStyle(fontWeight: FontWeight.bold))),
           ],
         )
