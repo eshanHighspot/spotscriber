@@ -1,42 +1,29 @@
 plugins {
     id("com.android.application")
     id("kotlin-android")
-    id("dev.flutter.flutter-gradle-plugin")  // Flutter plugin
-    id("com.chaquo.python")  // 🔹 Chaquopy for Python execution
+    id("dev.flutter.flutter-gradle-plugin")
+    id("com.chaquo.python") // ✅ Ensure Chaquopy is included for running Python
 }
 
 android {
     namespace = "com.example.spotscriber_app"
-    compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_11.toString()
-    }
+    compileSdk = 33
 
     defaultConfig {
         applicationId = "com.example.spotscriber_app"
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
+        minSdk = 21
+        targetSdk = 33
+        versionCode = 1
+        versionName = "1.0"
 
-        // 🔹 Chaquopy Python Configuration
         python {
-            version "3.8"  // Ensure compatibility with Faster-Whisper
+            version = "3.8"  // ✅ Ensure compatible Python version
             pip {
-                install "faster-whisper"
-                install "resemblyzer"
-                install "numpy"
-                install "pydub"
-                install "scikit-learn"
-                install "torch"
-                install "ctranslate2"
+                install("faster-whisper")
+                install("resemblyzer")
+                install("numpy")
+                install("pydub")
+                install("scikit-learn")
             }
         }
     }
@@ -46,8 +33,4 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
-}
-
-flutter {
-    source = "../.."
 }

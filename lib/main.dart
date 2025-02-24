@@ -58,7 +58,7 @@ class MyAppState extends ChangeNotifier {
 
     try {
       // Call Python transcription script using Chaquopy
-      final pyResult = await Chaquopy.runPythonCode("""
+      final pyResult = await Chaquopy.executeCode("""
 import transcription
 result = transcription.process_audio('${audioFilePath}')
 print(result)
