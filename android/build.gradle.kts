@@ -19,3 +19,14 @@ subprojects {
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath "com.android.tools.build:gradle:7.2.2"
+        classpath "com.chaquo.python:gradle:10.0.1"  // 🔹 Add Chaquopy
+    }
+}
