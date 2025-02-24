@@ -12,7 +12,9 @@ from vosk import Model as VoskModel, KaldiRecognizer
 # ------------------------------
 # Initialize Models
 # ------------------------------
-vosk_model_path = "assets/models/vosk/vosk-model-small-en-us-0.15"
+vosk_model_path = os.path.abspath("assets/models/vosk/vosk-model-small-en-us-0.15")
+resemblyzer_model_path = os.path.abspath("assets/models/resemblyzer.pt")
+
 if not os.path.exists(vosk_model_path):
     raise FileNotFoundError(f"❌ Vosk model not found at {vosk_model_path}. Download it first!")
 vosk_model = VoskModel(vosk_model_path)

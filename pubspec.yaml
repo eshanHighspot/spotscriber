@@ -12,11 +12,12 @@ dependencies:
   flutter:
     sdk: flutter
   chaquopy: ^0.0.20
-  path_provider: ^2.0.11  
+  path_provider: ^2.0.11 
+  provider: ^6.1.2  # Ensure this version is compatible with Flutter 3.29+
+  file_picker: ^6.1.1  
 
   english_words: ^4.0.0
-  provider: ^6.1.2
-  file_picker: ^5.2.6
+
 
 dev_dependencies:
   flutter_test:
