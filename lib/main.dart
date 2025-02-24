@@ -1,86 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:io';
-import 'package:chaquopy/chaquopy.dart';
+import 'dart:convert';
+import 'package:provider/provider.dart';
 
-void main() {
-  runApp(MyApp());
-}
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (context) => MyAppState(),
-      child: MaterialApp(
-        title: 'SpotScriber App',
-        theme: ThemeData(
-          useMaterial3: true,
-          colorScheme: ColorScheme.fromSeed(seedColor: const Color.fromARGB(255, 4, 11, 224)),
-        ),
-        home: MyHomePage(),
-      ),
-    );
-  }
-}
-
-class MyAppState extends ChangeNotifier {
-  var pipelineStage = PipelineStage.takeInput;
-  String audioFilePath = "";
-  List<dynamic> transcriptionResults = [];
-
-  void setAudioFilePath(String path) {
-    audioFilePath = path;
-    notifyListeners();
-  }
-
-  void setPipelineStage(PipelineStage stage) {
-    pipelineStage = stage;
-    notifyListeners();
-  }
-
-  Future<String> pickFile() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.audio);
-    if (result != null) {
-      return result.files.single.path!;
-    }
-    return '';
-  }
-
-  Future<void> processAudioLocally() async {
-    if (audioFilePath.isEmpty) return;
-
-    setPipelineStage(PipelineStage.displayInputProcessing);
-    notifyListeners();
-
-    try {
-      // Call Python transcription script using Chaquopy
-      final pyResult = await Chaquopy.executeCode("""
-import transcription
-result = transcription.process_audio('${audioFilePath}')
-print(result)
-""");
-
-      transcriptionResults = _parsePythonOutput(pyResult['stdout']);
-      setPipelineStage(PipelineStage.handleResponseFromTranscriber);
-    } catch (e) {
-      print("Processing failed: $e");
-    }
-  }
-
-  List<dynamic> _parsePythonOutput(String output) {
-    try {
-      return output.contains("results") ? output.split("results: ")[1].trim() : [];
-    } catch (e) {
-      print("Parsing error: $e");
-      return [];
-    }
-  }
-}
-
+// Define pipeline stages for UI state management
 enum PipelineStage {
   takeInput,
   displayInputFileName,
@@ -88,59 +13,148 @@ enum PipelineStage {
   handleResponseFromTranscriber,
 }
 
-class MyHomePage extends StatelessWidget {
+// Application state management using ChangeNotifier
+class MyAppState extends ChangeNotifier {
+  var pipelineStage = PipelineStage.takeInput;
+  String audioFilePath = "";
+  List<Map<String, dynamic>> transcriptionResults = [];
+
+  void setPipelineStage(PipelineStage stage) {
+    pipelineStage = stage;
+    notifyListeners();
+  }
+
+  void setAudioFilePath(String path) {
+    audioFilePath = path;
+    notifyListeners();
+  }
+
+  void setTranscriptionResults(List<Map<String, dynamic>> results) {
+    transcriptionResults = results;
+    notifyListeners();
+  }
+
+  Future<String?> pickFile() async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.audio,
+    );
+
+    if (result != null && result.files.single.path != null) {
+      return result.files.single.path!;
+    }
+    return null;
+  }
+
+  Future<void> processAudioLocally() async {
+    if (audioFilePath.isEmpty) {
+      return;
+    }
+
+    setPipelineStage(PipelineStage.displayInputProcessing);
+
+    // Call Python script for transcription & diarization
+    final process = await Process.run(
+  'python3',
+  ['android/app/src/main/python/transcription.py', '"$audioFilePath"'], // Add quotes
+);
+
+
+    if (process.exitCode == 0) {
+      try {
+        var output = jsonDecode(process.stdout);
+        if (output.containsKey("results")) {
+          setTranscriptionResults(output["results"]);
+        }
+      } catch (e) {
+        print("Error parsing transcription output: $e");
+      }
+    } else {
+      print("Error in processing audio: ${process.stderr}");
+    }
+
+    setPipelineStage(PipelineStage.handleResponseFromTranscriber);
+  }
+}
+
+// Main entry point of the app
+void main() {
+  runApp(MyApp());
+}
+
+// Root widget of the app
+class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    var appState = context.watch<MyAppState>();
-    return Scaffold(
-      body: Center(
-        child: Column(
-          children: [
-            SizedBox(height: 50),
-            Text("SpotScriber App"),
-            Visibility(
-              visible: appState.pipelineStage == PipelineStage.takeInput,
-              child: InputBar(appState: appState),
-            ),
-            Visibility(
-              visible: appState.pipelineStage == PipelineStage.displayInputFileName,
-              child: InputFileNameViewer(appState: appState),
-            ),
-            Visibility(
-              visible: appState.pipelineStage == PipelineStage.handleResponseFromTranscriber,
-              child: TranscriptionResults(appState: appState),
-            ),
-          ],
-        ),
+    return ChangeNotifierProvider(
+      create: (context) => MyAppState(),
+      child: MaterialApp(
+        debugShowCheckedModeBanner: false,
+        title: 'Diarization App',
+        theme: ThemeData(primarySwatch: Colors.blue),
+        home: MyHomePage(),
       ),
     );
   }
 }
 
+// HomePage which handles UI state changes based on pipeline stage
+class MyHomePage extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    var appState = context.watch<MyAppState>();
+
+
+    return Scaffold(
+      appBar: AppBar(title: Text("Audio Diarization")),
+      body: Column(
+        children: [
+          Visibility(
+            visible: appState.pipelineStage == PipelineStage.takeInput,
+            child: InputBar(appState: appState),
+          ),
+          Visibility(
+            visible: appState.pipelineStage == PipelineStage.displayInputFileName,
+            child: InputFileNameViewer(appState: appState),
+          ),
+          Visibility(
+            visible: appState.pipelineStage == PipelineStage.displayInputProcessing,
+            child: Center(child: CircularProgressIndicator()),
+          ),
+          Visibility(
+            visible: appState.pipelineStage == PipelineStage.handleResponseFromTranscriber,
+            child: TranscriptionResults(appState: appState),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Widget for selecting an audio file
 class InputBar extends StatelessWidget {
   final MyAppState appState;
   InputBar({required this.appState});
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+    return Column(
       children: [
         ElevatedButton(
           onPressed: () async {
             var filePath = await appState.pickFile();
-            if (filePath.isNotEmpty) {
+            if (filePath != null) {
               appState.setAudioFilePath(filePath);
               appState.setPipelineStage(PipelineStage.displayInputFileName);
             }
           },
-          child: Text('Choose File'),
+          child: Text("Pick Audio File"),
         ),
       ],
     );
   }
 }
 
+// Widget for displaying selected file name
 class InputFileNameViewer extends StatelessWidget {
   final MyAppState appState;
   InputFileNameViewer({required this.appState});
@@ -150,22 +164,18 @@ class InputFileNameViewer extends StatelessWidget {
     return Column(
       children: [
         Text("Selected File: ${appState.audioFilePath}"),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ElevatedButton(
-              onPressed: () {
-                appState.processAudioLocally();
-              },
-              child: Text("Process"),
-            ),
-          ],
+        ElevatedButton(
+          onPressed: () {
+            appState.processAudioLocally();
+          },
+          child: Text("Process Audio"),
         ),
       ],
     );
   }
 }
 
+// Widget for displaying transcription & speaker diarization results
 class TranscriptionResults extends StatelessWidget {
   final MyAppState appState;
   TranscriptionResults({required this.appState});
@@ -174,11 +184,9 @@ class TranscriptionResults extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: appState.transcriptionResults.map((result) {
-        return Card(
-          child: ListTile(
-            title: Text("${result['speaker']}: ${result['content']}"),
-            subtitle: Text("Time: ${result['time']}"),
-          ),
+        return ListTile(
+          title: Text(result["text"]),
+          subtitle: Text(result["speaker"]),
         );
       }).toList(),
     );
